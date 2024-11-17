@@ -8,7 +8,7 @@ import { I18NMixin } from "@haxtheweb/i18n-manager/lib/I18NMixin.js";
 
 /**
  * `hax-search`
- * 
+ *
  * @demo index.html
  * @element hax-search
  */
@@ -25,6 +25,7 @@ export class HaxSearch extends DDDSuper(I18NMixin(LitElement)) {
     this.t = {
       ...this.t,
       title: "Title",
+
     };
     this.registerLocalization({
       context: this,
@@ -54,8 +55,26 @@ export class HaxSearch extends DDDSuper(I18NMixin(LitElement)) {
         font-family: var(--ddd-font-navigation);
       }
       .wrapper {
+        /*
         margin: var(--ddd-spacing-2);
         padding: var(--ddd-spacing-4);
+        */
+        display: flex;
+        justify-content: center;
+
+      }
+      #analyze-button{
+        padding: var(--ddd-spacing-2);
+        box-sizing: content-box;
+      }
+      #input{
+        border-radius: var(--ddd-radius-sm);
+        border: var(--ddd-border-md);
+        height: 50px;
+        padding: 0 var(--ddd-spacing-2);
+        width: 270px;
+        font-size: inherit;
+        
       }
       h3 span {
         font-size: var(--hax-search-label-font-size, var(--ddd-font-size-s));
@@ -67,11 +86,37 @@ export class HaxSearch extends DDDSuper(I18NMixin(LitElement)) {
   render() {
     return html`
 <div class="wrapper">
-  <h3><span>${this.t.title}:</span> ${this.title}</h3>
-  <slot></slot>
+  <input id="input" placeholder="What are you looking for? Try haxtheweb.org "/>
+  <button id="analyze-button" class="button" >Analyze</button>
 </div>`;
   }
-
+  inputChanged(e) {
+    this.value = this.shadowRoot.querySelector('#input').value;
+  }
+  // life cycle will run when anything defined in `properties` is modified
+  updated(changedProperties) {
+    // see if value changes from user input and is not empty
+    if (changedProperties.has('value') && this.value) {
+      this.updateResults(this.value);
+    }
+    else if (changedProperties.has('value') && !this.value) {
+      this.items = [];
+    }
+    // @debugging purposes only
+    if (changedProperties.has('items') && this.items.length > 0) {
+      console.log(this.items);
+    }
+  }
+  updateResults(value) {
+    this.loading = true;
+    fetch(`https://haxtheweb.org/site.json`).then(d => d.ok ? d.json(): {}).then(data => {
+      if (data.collection) {
+        this.items = [];
+        this.items = data.collection.items;
+        this.loading = false;
+      }
+    });
+  }
   /**
    * haxProperties integration via file reference
    */
