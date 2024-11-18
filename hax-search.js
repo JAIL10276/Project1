@@ -5,7 +5,11 @@
 import { LitElement, html, css } from "lit";
 import { DDDSuper } from "@haxtheweb/d-d-d/d-d-d.js";
 import { I18NMixin } from "@haxtheweb/i18n-manager/lib/I18NMixin.js";
-
+import { ifDefined } from 'lit/directives/if-defined.js';
+import '@haxtheweb/hax-iconset/hax-iconset.js';
+import '@haxtheweb/simple-icon/simple-icon.js';
+import './hax-card.js';
+import './hax-data.js';
 /**
  * `hax-search`
  *
@@ -20,13 +24,14 @@ export class HaxSearch extends DDDSuper(I18NMixin(LitElement)) {
 
   constructor() {
     super();
-    this.title = "";
-    this.t = this.t || {};
-    this.t = {
-      ...this.t,
-      title: "Title",
+    this.title = "HAX Search";
+    this.loading = false;
+    this.data = null;
+    this.url = '';
+    this.query = '';
+    this.results = [];
+    this.failed = false;
 
-    };
     this.registerLocalization({
       context: this,
       localesPath:
@@ -40,7 +45,13 @@ export class HaxSearch extends DDDSuper(I18NMixin(LitElement)) {
   static get properties() {
     return {
       ...super.properties,
-      title: { type: String },
+      title: {type:String},
+      loading: { type: Boolean, reflect: true },
+      results: { type: Array, attribute: "search-results", reflect: true },
+      query: { type: String, attribute: "search-query" },
+      data: { type: Object, reflect: true },
+      url: { type: String },
+      failed: { type: Boolean, reflect: true },
     };
   }
 
@@ -50,72 +61,215 @@ export class HaxSearch extends DDDSuper(I18NMixin(LitElement)) {
     css`
       :host {
         display: block;
-        color: var(--ddd-theme-primary);
-        background-color: var(--ddd-theme-accent);
         font-family: var(--ddd-font-navigation);
       }
-      .wrapper {
-        /*
-        margin: var(--ddd-spacing-2);
-        padding: var(--ddd-spacing-4);
-        */
+      .hax-search-container{
         display: flex;
-        justify-content: center;
+        flex-direction: column;
+        gap: var(--ddd-spacing-5, 20px);
+        max-width: 1500px;
+        margin: auto;
+        align-items: center;
+
 
       }
-      #analyze-button{
-        padding: var(--ddd-spacing-2);
-        box-sizing: content-box;
+      .search-wrapper {
+        font: inherit;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--ddd-spacing-1, 4px);
+        max-width: 90vw;
+        justify-content: center;
       }
+      #analyze-button{
+        padding: 0 var(--ddd-spacing-2);
+        box-sizing: content-box;
+        text-align: center;
+        font-size: inherit;
+        border-radius: var(--ddd-radius-sm);
+        transition: ease-in-out 0.2s;
+      }
+      #analyze-button:hover{
+        transform: scale(1.05);
+        transition: ease-in-out 0.2s;
+      }
+      #analyze-button:active{
+        transform: scale(0.95);
+        transition: ease-in-out 0.2ms;
+      }
+
       #input{
         border-radius: var(--ddd-radius-sm);
         border: var(--ddd-border-md);
         height: 50px;
         padding: 0 var(--ddd-spacing-2);
-        width: 270px;
+        width: 430px;
         font-size: inherit;
-        
+        justify-content: space-evenly;
+      }
+
+      .hide-error-text{
+        display: none;
       }
       h3 span {
         font-size: var(--hax-search-label-font-size, var(--ddd-font-size-s));
       }
+      .hax-card-container{
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--ddd-spacing-4, 16px);
+        justify-content: space-evenly;
+      }
+      hax-card {
+        flex: 1 1 300px;
+      }
+
+      hax-data{
+        flex: 1 1 0;
+        justify-items: center;
+      }
+
     `];
   }
+  updated() {
+    this.toggleText()
+  }
+
 
   // Lit render the HTML
   render() {
     return html`
-<div class="wrapper">
-  <input id="input" placeholder="What are you looking for? Try haxtheweb.org "/>
-  <button id="analyze-button" class="button" >Analyze</button>
-</div>`;
+      <div class="hax-search-container"
+
+       <!-- Search Bar and Button -->
+        <div class="search-wrapper">
+          <input
+            id="input"
+            placeholder="🔍What are you looking for? Try haxtheweb.org"
+            @keydown="${(event) =>{if(event.key==='Enter'){this.inputChanged();}}}"
+          />
+          <button id="analyze-button" @click="${this.inputChanged}"class="button" label="analyze-button" >Analyze 🕵️</button>
+        </div>
+      ${(this.loading)? html`😎 Loading results for '${this.url}'`: html`
+                  ${(this.data === null)?
+                      html`<div id="error-notice">❗Incompatible site, 🤔 try something else...</div>`
+                      :
+                      html `
+                        <!-- Preview -->
+                        <div class="hax-data-container">
+                            <hax-data
+                              title=${this.data.title}
+                              description=${this.data.description}
+                              logo=${this.data.metadata.site.logo}
+                              established=${this.convertDate(this.data.metadata.site.created)}
+                              lastUpdated=${this.convertDate(this.data.metadata.site.updated)}
+                              hexCode=${this.data.metadata.theme.variables.hexCode}
+                              theme=${this.data.metadata.theme.name}
+                              icon=${this.data.metadata.theme.variables.icon}
+                              url=${this.url}
+                            ></hax-data>
+                        </div>
+                        <!-- Cards -->
+                        <div class="hax-card-container">
+                          ${this.results.length===0?
+                          console.log('results is empty')
+                          :
+                          this.results.map((item) => html`
+                            <hax-card
+                              title=${item.title}
+                              description=${item.description}
+                              src="${ifDefined(this.getSrc(item))}"
+                              lastUpdated=${this.convertDate(item.metadata.updated)}
+                              link="${this.url}${item.slug}"
+                              pageHTML="${this.url}${item.location}"
+                              readTime="${item.metadata.readtime}"
+                            ></hax-card>
+                            `
+                          )
+                          }
+                        </div>
+                      `}
+      `}
+                </div>
+`;}
+  convertDate(timestamp) {
+    const date = new Date(timestamp * 1000);
+    return date.toUTCString();
   }
-  inputChanged(e) {
-    this.value = this.shadowRoot.querySelector('#input').value;
+
+  inputChanged(){
+    this.query= this.shadowRoot.querySelector('#input').value;
+    this.updateResults();
   }
-  // life cycle will run when anything defined in `properties` is modified
-  updated(changedProperties) {
-    // see if value changes from user input and is not empty
-    if (changedProperties.has('value') && this.value) {
-      this.updateResults(this.value);
-    }
-    else if (changedProperties.has('value') && !this.value) {
-      this.items = [];
-    }
-    // @debugging purposes only
-    if (changedProperties.has('items') && this.items.length > 0) {
-      console.log(this.items);
-    }
-  }
-  updateResults(value) {
+  updateResults() {
+    // Loading...
     this.loading = true;
-    fetch(`https://haxtheweb.org/site.json`).then(d => d.ok ? d.json(): {}).then(data => {
-      if (data.collection) {
-        this.items = [];
-        this.items = data.collection.items;
+    // Putting crazy things at the start of the URL
+    let formattedQuery = this.query.replace(/^(?!https?:\/\/)(.+?)(\/?)$/, "https://$1");
+    this.url = '';
+    let jsonUrl ='';
+
+    // Getting rid of crazy things at the end of the URL
+    switch(formattedQuery) {
+      case formattedQuery.endsWith("site.json"):
+        this.url = formattedQuery.replace(/site\.json\/?$/, "");
+        jsonUrl = formattedQuery;
+        break;
+      case formattedQuery.endsWith("/"):
+        this.url = formattedQuery;
+        jsonUrl = `${this.url}site.json`;
+        break;
+      default:
+        this.url = formattedQuery+'/';
+        jsonUrl = `${this.url}site.json`;
+        break;
+    }
+
+    fetch(jsonUrl)
+      .then(response => {
+        if (!response.ok) {
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.items) {
+          this.results = [];
+          this.results = data.items;
+          this.data=null;
+          this.data = data;
+          this.loading = false;
+          this.requestUpdate();
+        }})
+      .catch(error =>{
         this.loading = false;
-      }
-    });
+        this.results = [];
+        this.data = null;
+        this.failed = true;
+        console.log('fetch failed: ');
+      });
+
+
+  }
+  toggleText(){
+    const text = this.shadowRoot.getElementById('error-notice');
+    if(text){
+    if (!this.failed){
+      text.classList.add('hide-error-text');
+    }
+    else if(!this.failed){
+      text.classList.remove('hide-error-text');
+    }
+    }
+  }
+  getSrc(item){
+    let images = item.metadata.images;
+    if(images && images.length > 0) {
+      console.log(this.url+images[0]);
+      return (this.url+images[0]);
+    }
+    else{
+      return '';
+    }
   }
   /**
    * haxProperties integration via file reference
